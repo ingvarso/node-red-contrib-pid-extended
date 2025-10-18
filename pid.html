@@ -22,6 +22,7 @@
             name: {value:""},
             setpoint: {value: 21.0},
             pb: {value: 1, required: true},
+            smooth_tau_proportional: {value: 120, required: true}, // default 120 sek
             ti: {value: 9999, required: true},
             td: {value: 0, required: true},
             integral_default: {value: 0.5},
@@ -51,6 +52,10 @@
     <div class="form-row">
         <label for="node-input-pb"><i class="icon-tag"></i> Proportional band</label>
         <input type="text" id="node-input-pb" placeholder="PB">
+    </div>
+    <div class="form-row">
+        <label for="node-input-smooth_tau_proportional"><i class="icon-tag"></i> Proportional Smoothing Time (s)</label>
+        <input type="text" id="node-input-smooth_tau_proportional" placeholder="Tau (s)">
     </div>
     <div class="form-row">
         <label for="node-input-ti"><i class="icon-tag"></i> Integral time (secs)</label>

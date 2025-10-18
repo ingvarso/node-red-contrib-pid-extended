@@ -23,6 +23,8 @@ module.exports = function(RED) {
     node.setpoint = Number(config.setpoint);
     node.enable = Number(config.enable);
     node.prop_band = Number(config.pb);
+    node.tau_smoothing_proportional = Number(config.smooth_tau_proportional);
+    node.smoothedPVProportional = null; // skal initialiseres første gang vi får PV
     node.t_integral = Number(config.ti);
     node.t_derivative = Number(config.td);
     node.integral_default = Number(config.integral_default);
@@ -186,7 +188,27 @@ module.exports = function(RED) {
             node.last_power = 0.0;  // power last time through
         }
         
-        var proportional = node.pv - node.setpoint;
+
+        /* Proportional PV Smooting */
+        // Init smoothed PV hvis første gang
+        if (node.smoothedPVProportional === null) {
+            node.smoothedPVProportional = node.pv;
+        }
+
+        // Beregn dt
+        let dt = (node.last_sample_time) ? (Date.now() - node.last_sample_time)/1000 : 120; // fallback 120s
+
+        // Eksponentiell glatting med tidskonstant tau
+        let tau = node.tau_smoothing_proportional;
+        let alpha = 1 - Math.exp(-dt/tau);
+
+        node.smoothedPVProportional = node.smoothedPVProportional + alpha * (node.pv - node.smoothedPVProportional);
+
+        // Bruk glattet PV for proporsjonalleddet
+        var proportional = node.smoothedPVProportional - node.setpoint;
+
+        /* End Probportional PV Smoothing */
+
         if (node.prop_band == 0) {
           // prop band is zero so drop back to on/off control with zero hysteresis
           if (proportional > 0) {
@@ -226,7 +248,7 @@ module.exports = function(RED) {
         power = 1.0;
       }
       node.last_power = power;
-      ans =  {payload: power, pv: node.pv, setpoint: node.setpoint, proportional: proportional, integral: node.integral, 
+      ans =  {payload: power, pv: node.pv, smoothed_pv_proportional: node.smoothedPVProportional, setpoint: node.setpoint, proportional: proportional, integral: node.integral, 
         derivative: node.derivative, smoothed_value: node.smoothed_value}
       return ans;
     }
