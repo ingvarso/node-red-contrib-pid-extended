@@ -44,6 +44,8 @@ Configuration
 
   * **Initial integral** - This is an initial value which is used to preset the integrated error value when the flow is deployed in order to assist in homing in on the setpoint the first time. It should be set to an estimate of what the power requirement might be in order to maintain the process at the setpoint. For example for a domestic room heating application it might be set to 0.2 indicating that 20% of the available power might be required to maintain the setpoint.  The value is of no consequence apart from on deployment of the flow. It may be setup either in the configuration of the node or by passing the node a message with **msg.topic** set to `integral_default` and **msg.payload** set to the required value. Note that if the property is set via a message then this must be done either before or with the very first process value.
 
+  * **Proportional PV smoothing** - The node applies exponential smoothing to the process value before calculating the proportional term. This smoothed value is stored in **msg.smoothed_pv_proportional** in the output message. A default value can be set either via the node configuration or by sending **msg.topic** set to `smoothed_pv_proportional_default` before the first PV sample. If no default is provided, the first PV sample will be used.
+
   * **Max sample interval** - This is the maximum time in seconds that is expected between samples. It is provided to cope with unusual situations such as a faulty sensor that might prevent the node from being supplied with a process value and to prevent the problem of integral wind-up during that time. Each time a process value is received a check is made on the time since the last sample and if too long has elapsed the integral error term is locked at the previous value and the derivative component is set to zero. It may be setup either in the configuration of the node or by passing the node a message with **msg.topic** set to `max_interval` and **msg.payload** set to the required integer value.
 
   * **Derivative smoothing factor** - In situations where the process sensor has limited resolution (such as the DS18B20), the use of deriviative can be problematic as when the process is changing only slowly the steps in the value cause spikes in the derivative. To reduce the effect of these this parameter can be set to apply a filter to the derivative term.  I have found that with the DS18B20 that a value of 3 here can be beneficial, providing effectively a low pass filter on the derivative at 1/3 of the derivative time. This feature may also be useful if the process value is particularly noisy. The smaller the value the greater the filtering effect but the more it will reduce the effectiveness of the derivative. A value of zero disables this feature. It may be setup either in the configuration of the node or by passing the node a message with **msg.topic** set to `smooth_factor` and **msg.payload** set to the required value.
@@ -67,8 +69,10 @@ The status text will normally be empty. In unusual conditions it will show the f
   
 Persistence
 -----------
-In order to reduce the impact of restarts or redeploys, you can save the integral value in a persistent storage location and feed it back in to the node as it starts. The integral value is available in `msg.integral` in the output messages. In order to feed it back in set the `integral_default` value to `0.5 -(cached_integral/prop_band)` before the first process value is passed in.
-  
+
+In order to reduce the impact of restarts or redeploys, you can save the integral value in a persistent storage location and feed it back in to the node as it starts. The integral value is available in `msg.integral` in the output messages. In order to feed it back in set the `integral_default` value to `0.5 -(cached_integral/prop_band)` before the first process value is passed in.  
+The smoothed proportional PV can similarly be persisted by storing **msg.smoothed_pv_proportional** and feeding it back in via `smoothed_pv_proportional_default`.
+
 Usage with a cooling process
 ----------------------------
 
@@ -83,4 +87,3 @@ If the process has both heating and cooling devices then it is necessary to spli
 
 
 [Node-RED]:  http://nodered.org/
-
