@@ -259,7 +259,7 @@ module.exports = function(RED) {
       }
       node.last_power = power;
       ans =  {payload: power, pv: node.pv, smoothed_pv_proportional: node.smoothedPVProportional, setpoint: node.setpoint, proportional: proportional, integral: node.integral, 
-        derivative: node.derivative, smoothed_value: node.smoothed_value}
+        derivative: node.derivative, smoothed_value: node.smoothed_value, enabled: node.enable}
       return ans;
     }
   }
