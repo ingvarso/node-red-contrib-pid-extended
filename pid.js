@@ -25,6 +25,7 @@ module.exports = function(RED) {
     node.prop_band = Number(config.pb);
     node.tau_smoothing_proportional = Number(config.smooth_tau_proportional);
     node.smoothedPVProportional = null; // skal initialiseres første gang vi får PV
+    node.smoothedPVProportional_default = null;  // default som kan settes via msg eller context
     node.t_integral = Number(config.ti);
     node.t_derivative = Number(config.td);
     node.integral_default = Number(config.integral_default);
@@ -71,6 +72,10 @@ module.exports = function(RED) {
       if (msg.hasOwnProperty('integral_default')){
         node.integral_default = Number(msg.integral_default);
       }
+      if (msg.hasOwnProperty('smoothed_pv_proportional_default')){
+        node.smoothedPVProportional_default = Number(msg.smoothedPVProportional_default);
+      }
+
       if (msg.topic == 'setpoint') {
         node.setpoint = Number(msg.payload);
       } else if (msg.topic == 'enable') {
@@ -102,6 +107,8 @@ module.exports = function(RED) {
         }
       } else if (msg.topic == 'integral_default') {
         node.integral_default = Number(msg.payload);
+      } else if (msg.topic === 'smoothed_pv_proportional_default') {
+        node.smoothedPVProportional_default = Number(msg.payload);
       } else {
         // anything else is assumed to be a process value
         node.pv = Number(msg.payload);   // this may give NaN which is handled in runControlLoop
@@ -186,14 +193,17 @@ module.exports = function(RED) {
             node.integral = (0.5 - node.integral_default)*node.prop_band;
             node.derivative = 0.0;
             node.last_power = 0.0;  // power last time through
+            if (node.smoothedPVProportional === null) {
+              if (node.smoothedPVProportional_default !== null) {
+                node.smoothedPVProportional = node.smoothedPVProportional_default;
+              } else {
+                node.smoothedPVProportional = node.pv; // fallback
+              }
+            }
         }
         
 
         /* Proportional PV Smooting */
-        // Init smoothed PV hvis første gang
-        if (node.smoothedPVProportional === null) {
-            node.smoothedPVProportional = node.pv;
-        }
 
         // Beregn dt
         let dt = (node.last_sample_time) ? (Date.now() - node.last_sample_time)/1000 : 120; // fallback 120s
