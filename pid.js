@@ -21,6 +21,7 @@ module.exports = function(RED) {
     RED.nodes.createNode(this,config);
     var node = this;
     node.setpoint = Number(config.setpoint);
+    node.persist = config.persist || false; // Nytt felt for å bestemme om context skal persisteres
     node.enable = Number(config.enable);
     node.prop_band = Number(config.pb);
     node.tau_smoothing_proportional = Number(config.smooth_tau_proportional);
@@ -72,7 +73,7 @@ module.exports = function(RED) {
       if (msg.hasOwnProperty('integral_default')){
         node.integral_default = Number(msg.integral_default);
       }
-      if (msg.hasOwnProperty('smoothed_pv_proportional_default')){
+      if (msg.hasOwnProperty('smoothedPVProportional_default')){
         node.smoothedPVProportional_default = Number(msg.smoothedPVProportional_default);
       }
 
@@ -189,17 +190,39 @@ module.exports = function(RED) {
         } else {
             // first time through so initialise context data
             node.smoothed_value = node.pv;
-            // setup the integral term so that the power out would be integral_default if pv=setpoint
-            node.integral = (0.5 - node.integral_default)*node.prop_band;
-            node.derivative = 0.0;
-            node.last_power = 0.0;  // power last time through
-            if (node.smoothedPVProportional === null) {
-              if (node.smoothedPVProportional_default !== null) {
-                node.smoothedPVProportional = node.smoothedPVProportional_default;
-              } else {
-                node.smoothedPVProportional = node.pv; // fallback
-              }
-            }
+
+            // Hvis persist er aktivert, forsøk å hente tidligere verdier fra context
+            if (node.persist) {
+                const storedIntegral = node.context().get("integral");
+                const storedSmoothed = node.context().get("smoothedPVProportional");
+
+                if (storedIntegral !== undefined && !isNaN(storedIntegral)) {
+                    node.integral = storedIntegral;
+                } else {
+                    // setup the integral term so that the power out would be integral_default if pv=setpoint
+                    node.integral = (0.5 - node.integral_default) * node.prop_band;
+                }
+
+                if (storedSmoothed !== undefined && !isNaN(storedSmoothed)) {
+                    node.smoothedPVProportional = storedSmoothed;
+                } else if (node.smoothedPVProportional_default !== null) {
+                    node.smoothedPVProportional = node.smoothedPVProportional_default;
+                } else {
+                    node.smoothedPVProportional = node.pv; // fallback
+                }
+            } else {
+                // Persist er ikke aktivert — bruk vanlige defaults
+                node.integral = (0.5 - node.integral_default) * node.prop_band;
+                node.derivative = 0.0;
+                node.last_power = 0.0;
+                if (node.smoothedPVProportional === null) {
+                    if (node.smoothedPVProportional_default !== null) {
+                        node.smoothedPVProportional = node.smoothedPVProportional_default;
+                    } else {
+                        node.smoothedPVProportional = node.pv;
+                    }
+                }
+            } 
         }
         
 
@@ -218,7 +241,7 @@ module.exports = function(RED) {
         var proportional = node.smoothedPVProportional - node.setpoint;
 
         /* End Probportional PV Smoothing */
-
+        let power;
         if (node.prop_band == 0) {
           // prop band is zero so drop back to on/off control with zero hysteresis
           if (proportional > 0) {
@@ -258,6 +281,14 @@ module.exports = function(RED) {
         power = 1.0;
       }
       node.last_power = power;
+
+      // Lagre verdier i context hvis persist er slått på
+      if (node.persist) {
+        node.context().set("integral", node.integral);
+        node.context().set("smoothedPVProportional", node.smoothedPVProportional);
+      }
+
+
       ans =  {payload: power, pv: node.pv, smoothed_pv_proportional: node.smoothedPVProportional, setpoint: node.setpoint, proportional: proportional, integral: node.integral, 
         derivative: node.derivative, smoothed_value: node.smoothed_value, enabled: node.enable}
       return ans;

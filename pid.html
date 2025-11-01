@@ -20,6 +20,7 @@
         color: '#a6bbcf',
         defaults: {
             name: {value:""},
+            persist: { value: false },
             setpoint: {value: 21.0},
             pb: {value: 1, required: true},
             smooth_tau_proportional: {value: 120, required: true}, // default 120 sek
@@ -44,6 +45,10 @@
     <div class="form-row">
         <label for="node-input-name"><i class="icon-tag"></i> Name</label>
         <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+    <div class="form-row">
+       <label for="node-input-persist"><i class="fa fa-save"></i> Persist in context</label>
+       <input type="checkbox" id="node-input-persist" style="width:auto; margin-left:10px;">
     </div>
     <div class="form-row">
         <label for="node-input-setpoint"><i class="icon-tag"></i> Setpoint</label>
@@ -101,6 +106,9 @@
     <p>The configuration parameters are as follows:</p>
     <ul>
     
+        <!-- ✨ New configuration option -->
+      <li><b>Persist</b> – If enabled, the node automatically stores the <i>integral</i> and <i>smoothed proportional PV</i> values in Node-RED context storage. This allows the controller to resume smoothly after a redeploy or restart without losing  its internal state. The persistence behavior (memory, file, etc.) depends on the Node-RED context store configuration.</li>
+      
       <li><b>Setpoint</b> - This is the process value that the process is aiming for. It may be setup either in the configuration of the node, by passing the node a message with <b>msg.topic</b> set to <code>setpoint</code> and <b>msg.payload</b> set to the required floating point value, or by passing the value in <b>msg.setpoint</b>.</li>
       
       <li><b>Proportional band</b> - This controls the gain of the loop and is the range of process value over which the power output will go from 0 to full power. The units are that of the process and setpoint, so for example in a heating application it might be set to 1.5 degrees. If set to zero then control becomes On/Off with zero hysteresis. It may be setup in configuration of the node, by passing the node a message with <b>msg.topic</b> set to <code>prop_band</code> and <b>msg.payload</b> set to the required floating point value, or by passing the value in <b>msg.prop_band</b>.</li>
