@@ -1,5 +1,6 @@
 /**
- * Copyright 2016 Colin Law
+ * Original: Copyright 2016 Colin Law
+ * Updated version: Copyright 2026 Ingvar Soerlien
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,7 +99,7 @@ module.exports = function(RED) {
           }
 
           if (mode === "smoothing" || mode === "full") {
-              node.smoothed_value = null;
+              node.smoothed_value = node.pv
               node.smoothedPVProportional = null;
               node.derivative = 0;
 
@@ -133,7 +134,7 @@ module.exports = function(RED) {
           node.status({});
         } else if (wasEnabled && !node.enable) {
           // now disabled, force the power to the disabled value immediately
-          newMsg = {payload: node.disabled_op};
+          //newMsg = {payload: node.disabled_op};
           node.status({fill:"yellow",shape:"dot",text:"Disabled"});
         }
       } else if (msg.topic == 'prop_band') {
@@ -317,6 +318,16 @@ module.exports = function(RED) {
         // re-enable, so we intentionally let `power` pass through unchanged.
         // disabled_op is still used as the fallback for bad-PV and NaN cases below.
         if (!node.enable) {
+          // Disabled mode:
+          // - No P or D contribution
+          // - Integral is frozen and provides offset
+          // - Output is centered around disabled_op
+
+          if (node.prop_band !== 0) {
+            power = node.disabled_op - (node.integral / node.prop_band);
+          } else {
+            power = node.disabled_op;
+          }
           node.status({fill:"yellow",shape:"dot",text:"Disabled"});
         } else if (integral_locked) {
           node.status({fill:"green",shape:"dot",text:"Integral Locked"});
