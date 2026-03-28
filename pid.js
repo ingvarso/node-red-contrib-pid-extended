@@ -77,6 +77,55 @@ module.exports = function(RED) {
         node.smoothedPVProportional_default = Number(msg.smoothedPVProportional_default);
       }
 
+      // ======================================================================
+      // === RESET FUNKSJON ===================================================
+      // ======================================================================
+      // msg.topic = "reset"
+      // msg.payload ∈ { "integral", "smoothing", "full" }
+      if (msg.topic === "reset") {
+
+          const mode = ("" + msg.payload).toLowerCase();  // normaliser string
+
+          if (mode === "integral" || mode === "full") {
+              node.integral = 0;
+              if (node.persist) node.context().set("cached_integral", undefined);
+          }
+
+          if (mode === "smoothing" || mode === "full") {
+              node.smoothed_value = null;
+              node.smoothedPVProportional = null;
+              node.derivative = 0;
+
+              if (node.persist) {
+                  node.context().set("smoothed_value", undefined);
+                  node.context().set("smoothedPVProportional", undefined);
+              }
+          }
+
+          // full reset nuller alt
+          if (mode === "full") {
+              node.last_power = 0;
+          }
+
+          // statusmelding
+          node.status({
+              fill: "yellow",
+              shape: "ring",
+              text: `Reset: ${mode}`
+          });
+
+          // svar
+          //send({
+          //    topic: "reset",
+          //    payload: mode,
+          //    reset: true
+          //});
+
+          //if (done) done();
+          return;         // viktig — ikke kjør PID denne meldingen
+      }
+
+
       if (msg.topic == 'setpoint') {
         node.setpoint = Number(msg.payload);
       } else if (msg.topic == 'enable') {
@@ -193,16 +242,14 @@ module.exports = function(RED) {
 
             // Hvis persist er aktivert, forsøk å hente tidligere verdier fra context
             if (node.persist) {
-                const storedIntegral = node.context().get("integral");
+                const cached_integral = node.context().get("cached_integral");
                 const storedSmoothed = node.context().get("smoothedPVProportional");
 
-                if (storedIntegral !== undefined && !isNaN(storedIntegral)) {
-                    node.integral = storedIntegral;
-                } else {
-                    // setup the integral term so that the power out would be integral_default if pv=setpoint
-                    node.integral = (0.5 - node.integral_default) * node.prop_band;
-                }
-
+                if (cached_integral !== undefined && !isNaN(cached_integral)) {
+                    node.integral_default = 0.5 - (cached_integral/node.prop_band);
+                } 
+ 
+                
                 if (storedSmoothed !== undefined && !isNaN(storedSmoothed)) {
                     node.smoothedPVProportional = storedSmoothed;
                 } else if (node.smoothedPVProportional_default !== null) {
@@ -210,12 +257,13 @@ module.exports = function(RED) {
                 } else {
                     node.smoothedPVProportional = node.pv; // fallback
                 }
-            } else {
-                // Persist er ikke aktivert — bruk vanlige defaults
-                node.integral = (0.5 - node.integral_default) * node.prop_band;
+                // FIX: initialise derivative and last_power even in the persist path so they
+                // are never undefined when used in the first calculation pass.
                 node.derivative = 0.0;
                 node.last_power = 0.0;
-                if (node.smoothedPVProportional === null) {
+            } else {
+                // Persist er ikke aktivert — bruk vanlige defaults
+               if (node.smoothedPVProportional === null) {
                     if (node.smoothedPVProportional_default !== null) {
                         node.smoothedPVProportional = node.smoothedPVProportional_default;
                     } else {
@@ -223,6 +271,10 @@ module.exports = function(RED) {
                     }
                 }
             } 
+            // setup the integral term so that the power out would be integral_default if pv=setpoint
+            node.integral = (0.5 - node.integral_default) * node.prop_band;
+            node.derivative = 0.0;
+            node.last_power = 0.0;
         }
         
 
@@ -241,7 +293,6 @@ module.exports = function(RED) {
         var proportional = node.smoothedPVProportional - node.setpoint;
 
         /* End Probportional PV Smoothing */
-        let power;
         if (node.prop_band == 0) {
           // prop band is zero so drop back to on/off control with zero hysteresis
           if (proportional > 0) {
@@ -253,11 +304,16 @@ module.exports = function(RED) {
             power = node.last_power;
           }
         } else {
-          var power = -1.0/node.prop_band * (proportional + node.integral + node.derivative) + 0.5;
+          // FIX: removed spurious `var` re-declaration; `power` is already declared via `let` above.
+          power = -1.0/node.prop_band * (proportional + node.integral + node.derivative) + 0.5;
         }
-        // set power to disabled value if the loop is not enabled
+        // When disabled: the integral is already frozen (&&node.enable guard above prevents
+        // accumulation), and the PID formula output is still valid and useful — it represents
+        // where the controller *would* be driving the output based on the frozen integral.
+        // Overriding to disabled_op here would discard that information and cause a bump on
+        // re-enable, so we intentionally let `power` pass through unchanged.
+        // disabled_op is still used as the fallback for bad-PV and NaN cases below.
         if (!node.enable) {
-          power = node.disabled_op;
           node.status({fill:"yellow",shape:"dot",text:"Disabled"});
         } else if (integral_locked) {
           node.status({fill:"green",shape:"dot",text:"Integral Locked"});
@@ -270,7 +326,7 @@ module.exports = function(RED) {
         power = node.disabled_op;
         node.status({fill:"red",shape:"dot",text:"Bad PV"});
       }
-      // if NaN vaues have been entered for params or something drastic has gone wrong
+      // if NaN values have been entered for params or something drastic has gone wrong
       // then set power to disabled value
       if (isNaN(power)) {
         power = node.disabled_op;
@@ -284,7 +340,7 @@ module.exports = function(RED) {
 
       // Lagre verdier i context hvis persist er slått på
       if (node.persist) {
-        node.context().set("integral", node.integral);
+        node.context().set("cached_integral", node.integral);
         node.context().set("smoothedPVProportional", node.smoothedPVProportional);
       }
 
