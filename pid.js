@@ -99,8 +99,8 @@ module.exports = function(RED) {
           }
 
           if (mode === "smoothing" || mode === "full") {
-              node.smoothed_value = node.pv
-              node.smoothedPVProportional = null;
+              node.smoothedPVDerivative = node.pv
+              node.smoothedPVProportional = node.pv;
               node.derivative = 0;
 
               if (node.persist) {
@@ -199,13 +199,13 @@ module.exports = function(RED) {
               var ts = Math.max(node.t_derivative/node.smooth_factor, delta_t);
               factor = 1.0/(ts/delta_t);
             } else {
-              // no integral smoothing so factor is 1, this makes smoothed_value the previous pv
+              // no derivative smoothing so factor is 1, this makes smoothedPVDerivative the previous pv
               factor = 1.0;
             }
-            var delta_v = (node.pv - node.smoothed_value) * factor;
-            node.smoothed_value = node.smoothed_value + delta_v
+            var delta_v = (node.pv - node.smoothedPVDerivative) * factor;
+            node.smoothedPVDerivative = node.smoothedPVDerivative + delta_v
             //node.log( "factor " + factor.toFixed(3) + " delta_t " + delta_t + " delta_v " + delta_v.toFixed(3) +
-            //  " smoothed " + node.smoothed_value.toFixed(3));
+            //  " smoothed " + node.smoothedPVDerivative.toFixed(3));
             node.derivative = node.t_derivative * delta_v/delta_t;
             
             // lock the integral if abs(previous integral + error) > prop_band/2
@@ -237,7 +237,7 @@ module.exports = function(RED) {
             
         } else {
             // first time through so initialise context data
-            node.smoothed_value = node.pv;
+            node.smoothedPVDerivative = node.pv;
 
             // Hvis persist er aktivert, forsøk å hente tidligere verdier fra context
             if (node.persist) {
@@ -360,7 +360,7 @@ module.exports = function(RED) {
 
 
       ans =  {payload: power, pv: node.pv, smoothed_pv_proportional: node.smoothedPVProportional, setpoint: node.setpoint, proportional: proportional, integral: node.integral, 
-        derivative: node.derivative, smoothed_value: node.smoothed_value, enabled: node.enable}
+        derivative: node.derivative, smoothedPVDerivative: node.smoothedPVDerivative, enabled: node.enable}
       return ans;
     }
   }
