@@ -85,6 +85,12 @@ module.exports = function(RED) {
       if (msg.topic === "reset") {
 
           const mode = ("" + msg.payload).toLowerCase();  // normaliser string
+          const validModes = ["integral", "smoothing", "full"];
+
+          if (!validModes.includes(mode)) {
+              node.warn(`Invalid reset mode: ${mode}`);
+              return;
+          }
 
           if (mode === "integral" || mode === "full") {
               node.integral = 0;
@@ -97,7 +103,6 @@ module.exports = function(RED) {
               node.derivative = 0;
 
               if (node.persist) {
-                  node.context().set("smoothed_value", undefined);
                   node.context().set("smoothedPVProportional", undefined);
               }
           }
@@ -114,14 +119,6 @@ module.exports = function(RED) {
               text: `Reset: ${mode}`
           });
 
-          // svar
-          //send({
-          //    topic: "reset",
-          //    payload: mode,
-          //    reset: true
-          //});
-
-          //if (done) done();
           return;         // viktig — ikke kjør PID denne meldingen
       }
 
@@ -179,6 +176,7 @@ module.exports = function(RED) {
       //node.log("pv, setpoint, prop_band, t_integral, t_derivative, integral_default, smooth_factor, max_interval, enable, disabled_op");
       //node.log(node.pv + " " + node.setpoint + " " + node.prop_band + " " + node.t_integral + " " + node.t_derivative + " " + node.integral_default + " " + node.smooth_factor + " " + node.max_interval + " " + node.enable + " " + node.disabled_op);
       var ans;
+      let power;
       node.status({});
       // check we have a good pv value
       if (!isNaN(node.pv) && isFinite(node.pv)) {
@@ -246,10 +244,12 @@ module.exports = function(RED) {
                 const storedSmoothed = node.context().get("smoothedPVProportional");
 
                 if (cached_integral !== undefined && !isNaN(cached_integral)) {
-                    node.integral_default = 0.5 - (cached_integral/node.prop_band);
-                } 
- 
-                
+                    node.integral = cached_integral;
+                    node.integral_default = 0.5 - (node.integral / node.prop_band);
+                } else {
+                    node.integral = (0.5 - node.integral_default) * node.prop_band;
+                }
+
                 if (storedSmoothed !== undefined && !isNaN(storedSmoothed)) {
                     node.smoothedPVProportional = storedSmoothed;
                 } else if (node.smoothedPVProportional_default !== null) {
@@ -257,13 +257,14 @@ module.exports = function(RED) {
                 } else {
                     node.smoothedPVProportional = node.pv; // fallback
                 }
-                // FIX: initialise derivative and last_power even in the persist path so they
-                // are never undefined when used in the first calculation pass.
                 node.derivative = 0.0;
                 node.last_power = 0.0;
             } else {
                 // Persist er ikke aktivert — bruk vanlige defaults
-               if (node.smoothedPVProportional === null) {
+                node.integral = (0.5 - node.integral_default) * node.prop_band;
+                node.derivative = 0.0;
+                node.last_power = 0.0;
+                if (node.smoothedPVProportional === null) {
                     if (node.smoothedPVProportional_default !== null) {
                         node.smoothedPVProportional = node.smoothedPVProportional_default;
                     } else {
@@ -271,28 +272,31 @@ module.exports = function(RED) {
                     }
                 }
             } 
-            // setup the integral term so that the power out would be integral_default if pv=setpoint
-            node.integral = (0.5 - node.integral_default) * node.prop_band;
-            node.derivative = 0.0;
-            node.last_power = 0.0;
         }
         
 
-        /* Proportional PV Smooting */
+        /* Proportional PV Smoothing */
 
-        // Beregn dt
-        let dt = (node.last_sample_time) ? (Date.now() - node.last_sample_time)/1000 : 120; // fallback 120s
+        // Beregn dt — use the already-captured `time` to avoid a second Date.now() call
+        // that would give a slightly different timestamp than the one stored in last_sample_time.
+        let dt = (node.last_sample_time) ? (time - node.last_sample_time)/1000 : 120; // fallback 120s
 
         // Eksponentiell glatting med tidskonstant tau
         let tau = node.tau_smoothing_proportional;
-        let alpha = 1 - Math.exp(-dt/tau);
+        // Guard against tau <= 0: a zero/negative time constant means no smoothing (alpha = 1).
+        let alpha = (tau > 0) ? (1 - Math.exp(-dt / tau)) : 1.0;
+
+        // ensure valid starting point after a smoothing reset
+        if (node.smoothedPVProportional === null) {
+            node.smoothedPVProportional = node.pv;
+        }
 
         node.smoothedPVProportional = node.smoothedPVProportional + alpha * (node.pv - node.smoothedPVProportional);
 
         // Bruk glattet PV for proporsjonalleddet
         var proportional = node.smoothedPVProportional - node.setpoint;
 
-        /* End Probportional PV Smoothing */
+        /* End Proportional PV Smoothing */
         if (node.prop_band == 0) {
           // prop band is zero so drop back to on/off control with zero hysteresis
           if (proportional > 0) {
@@ -304,7 +308,6 @@ module.exports = function(RED) {
             power = node.last_power;
           }
         } else {
-          // FIX: removed spurious `var` re-declaration; `power` is already declared via `let` above.
           power = -1.0/node.prop_band * (proportional + node.integral + node.derivative) + 0.5;
         }
         // When disabled: the integral is already frozen (&&node.enable guard above prevents
